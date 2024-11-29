@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Request Rental</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="css/styles.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+    <header>
+        <h1>Rental Request for <span id="item-name"></span></h1>
+        <p id="item-description"></p>
+        <p>Owner: <span id="item-owner"></span></p>
+        <p>Price: $<span id="item-price"></span> per day</p>
+      </header>
+
+  <section>
+    <h3>Rental Period</h3>
+    <form id="rental-form">
+      <label for="rental-period">Rental Period (days):</label>
+      <input type="number" id="rental-period" name="rental-period" required><br><br>
+      
+      <h3>Message to Owner</h3>
+      <textarea id="message" name="message" rows="4" cols="50" placeholder="Write a message to the owner..." required></textarea><br><br>
+      
+      <button type="submit">Request Rental</button>
+    </form>
+  </section>
+
+  <section>
+    <h3>Chat with Owner</h3>
+    <div id="chat-messages"></div>
+    <input type="text" id="chat-input" placeholder="Type a message...">
+    <button id="send-chat">Send</button>
+  </section>
+
+  <footer>
+    <p><a href="browse.html">Back to Browse</a></p>
+  </footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.3.3/axios.min.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", async function() {  // Make this callback async
+      const urlParams = new URLSearchParams(window.location.search);
+      // Log the full URL parameters to check if 'ownerId' is there
+      console.log('URL Params:', urlParams.toString());
+      const itemId = urlParams.get('itemId');  // Corrected this from 'id' to 'itemId'
+      const itemName = urlParams.get('itemName');
+      const itemDescription = urlParams.get('itemDescription');
+      const ownerId = urlParams.get('ownerId');  // Corrected to 'ownerId' instead of 'itemOwner'
+      const itemPrice = urlParams.get('itemPrice');
+      // Debugging: Check if parameters are retrieved correctly
+      console.log('Item ID:', itemId);
+      console.log('Owner ID:', ownerId);  // Debugging ownerId
+      // Debugging: Check if parameters are retrieved correctly
+      console.log('URL Params:', itemId, itemName, itemDescription, ownerId, itemPrice);
+      
+      if (itemName) document.getElementById('item-name').textContent = itemName;
+      if (itemDescription) document.getElementById('item-description').textContent = itemDescription;
+      //if (ownerId) document.getElementById('item-owner').textContent = ownerId;  // Changed to 'ownerId'
+      if (itemPrice) document.getElementById('item-price').textContent = itemPrice;
+      if (ownerId) {
+        try {
+            const response = await axios.get(`/api/users/${ownerId}`);
+            if (response.data && response.data.name) {
+                document.getElementById("item-owner").textContent = response.data.name;
+            } else {
+                document.getElementById("item-owner").textContent = "Owner name not available";
+            }
+            } catch (error) {
+                console.error("Error fetching owner:", error);
+                document.getElementById("item-owner").textContent = "Owner not found";
+            }
+            } else {
+                console.warn("Owner ID is missing");
+                document.getElementById("item-owner").textContent = "Owner not found";
+            }
+      // Async function to get logged-in user ID from cookies
+      function getLoggedInUserId() {
+        const cookies = document.cookie.split('; ');
+        for (let cookie of cookies) {
+          const [key, value] = cookie.split('=');
+          if (key === 'userId') {
+            return decodeURIComponent(value.trim());  // Return userId value from the cookie
+          }
+        }
+        return null;  // Return null if userId is not found
+      }
+  
+      // Handle rental form submission
+      document.getElementById('rental-form').addEventListener('submit', async function(event) {
+        event.preventDefault();
+        // Get logged-in user ID only when form is submitted
+        const renterId = getLoggedInUserId();
+        if (!renterId) {
+          console.log("User is not logged in. Cookies: ", document.cookie);  // Debugging cookie values
+          alert('User is not logged in. Please log in to request a rental.');
+          return;  // Prevent form submission if user is not logged in
+        }
+        const rentalPeriod = document.getElementById('rental-period').value;
+        const message = document.getElementById('message').value;
+        console.log({
+          itemId: itemId,
+          renterId: renterId,  // Use the fetched userId
+          ownerId: ownerId,  // Use the ownerId from URL params
+          rentalPeriod: rentalPeriod,
+          message: message
+        });
+        
+        try {
+          const response = await axios.post('/api/rental/request', {
+            itemId: itemId,
+            renterId: renterId,  // Use the fetched userId
+            ownerId: ownerId,  // Use the ownerId from URL params
+            rentalPeriod: rentalPeriod,
+            message: message
+          }, { withCredentials: true });
+  
+          alert('Rental request sent successfully');
+          window.location.href = 'browse.html';  // Redirect after submission
+        } catch (error) {
+          console.error('Error in rental request:', error);
+          if (error.response) {
+            console.error('Response data:', error.response.data);  // Log the error response from the server
+          }
+          alert('Failed to send rental request');
+        }
+      });
+  
+      // Chat functionality with Socket.io
+      const socket = io();
+      const roomId = 'item_' + itemId; // Unique room identifier for the item
+      
+      // Join the chat room for this item
+      socket.emit('joinRoom', roomId);
+  
+      // Send chat message when the 'Send' button is clicked
+      document.getElementById('send-chat').addEventListener('click', () => {
+        const message = document.getElementById('chat-input').value;
+        socket.emit('chatMessage', { message: message, roomId: roomId });  // Send message to server
+        document.getElementById('chat-input').value = '';  // Clear input field
+      });
+  
+      // Listen for incoming chat messages and display them
+      socket.on('chatMessage', (data) => {
+        const chatMessages = document.getElementById('chat-messages');
+        const messageElement = document.createElement('div');
+        messageElement.textContent = `${data.sender}: ${data.message}`;  // Display message with sender info
+        chatMessages.appendChild(messageElement);
+      });
+    });
+  </script>
+</body>
+</html>
