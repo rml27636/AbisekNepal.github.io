@@ -1,7 +1,7 @@
 const Review = require('../models/review');
 const Item = require('../models/items');
+const mongoose = require('mongoose');
 
-// Function to create a new review
 const createReview = async (req, res) => {
   const { userId, itemId, rating, comment } = req.body;
 
@@ -32,15 +32,15 @@ const createReview = async (req, res) => {
   }
 };
 
-// Function to get reviews for a specific item
 const getReviewsByItem = async (req, res) => {
   const { itemId } = req.params;
 
   try {
-    // Fetch reviews for the given item ID and populate user details
+    // Fetch reviews for the given item ID, sorted by the latest
     const reviews = await Review.find({ itemId })
-      .populate('userId', 'name') // Populate user name (you can add other fields as needed)
-      .populate('itemId', 'name'); // Optionally, populate item details if needed (like item name)
+      .populate('userId', 'name')
+      .populate('itemId', 'name')
+      .sort({ createdAt: -1 }); // Sorting by the latest reviews
 
     if (reviews.length === 0) {
       return res.status(404).json({ message: 'No reviews found for this item' });
@@ -53,5 +53,6 @@ const getReviewsByItem = async (req, res) => {
     res.status(400).json({ error: 'Failed to fetch reviews' });
   }
 };
+
 
 module.exports = { createReview, getReviewsByItem };
