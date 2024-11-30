@@ -50,6 +50,7 @@
       const itemDescription = urlParams.get('itemDescription');
       const ownerId = urlParams.get('ownerId');  // Corrected to 'ownerId' instead of 'itemOwner'
       const itemPrice = urlParams.get('itemPrice');
+      const ownerName = urlParams.get('ownerName');
       // Debugging: Check if parameters are retrieved correctly
       console.log('Item ID:', itemId);
       console.log('Owner ID:', ownerId);  // Debugging ownerId
@@ -61,21 +62,11 @@
       //if (ownerId) document.getElementById('item-owner').textContent = ownerId;  // Changed to 'ownerId'
       if (itemPrice) document.getElementById('item-price').textContent = itemPrice;
       if (ownerId) {
-        try {
-            const response = await axios.get(`/api/users/${ownerId}`);
-            if (response.data && response.data.name) {
-                document.getElementById("item-owner").textContent = response.data.name;
-            } else {
-                document.getElementById("item-owner").textContent = "Owner name not available";
-            }
-            } catch (error) {
-                console.error("Error fetching owner:", error);
-                document.getElementById("item-owner").textContent = "Owner not found";
-            }
-            } else {
-                console.warn("Owner ID is missing");
-                document.getElementById("item-owner").textContent = "Owner not found";
-            }
+        document.getElementById('item-owner').textContent = ownerName;  // Display owner name directly
+      } else {
+        console.warn("Owner name is missing");
+        document.getElementById("item-owner").textContent = "Owner not found";
+        }
       // Async function to get logged-in user ID from cookies
       function getLoggedInUserId() {
         const cookies = document.cookie.split('; ');
@@ -118,7 +109,7 @@
           }, { withCredentials: true });
   
           alert('Rental request sent successfully');
-          window.location.href = 'browse.html';  // Redirect after submission
+          window.location.href = 'payment.html';  // Redirect after submission
         } catch (error) {
           console.error('Error in rental request:', error);
           if (error.response) {
@@ -138,18 +129,86 @@
       // Send chat message when the 'Send' button is clicked
       document.getElementById('send-chat').addEventListener('click', () => {
         const message = document.getElementById('chat-input').value;
-        socket.emit('chatMessage', { message: message, roomId: roomId });  // Send message to server
-        document.getElementById('chat-input').value = '';  // Clear input field
+        const senderId = getLoggedInUserId(); // Get logged-in user ID
+        if (message) {
+          socket.emit('chatMessage', { message, roomId, senderId });
+          document.getElementById('chat-input').value = ''; 
+        }
       });
-  
-      // Listen for incoming chat messages and display them
+
+      // Listen for incoming messages and display them
       socket.on('chatMessage', (data) => {
         const chatMessages = document.getElementById('chat-messages');
         const messageElement = document.createElement('div');
-        messageElement.textContent = `${data.sender}: ${data.message}`;  // Display message with sender info
+        messageElement.textContent = `${data.senderName}: ${data.message}`; 
         chatMessages.appendChild(messageElement);
       });
     });
   </script>
+  <script>
+  document.addEventListener("DOMContentLoaded", async function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const itemId = urlParams.get('itemId'); 
+    const roomId = 'item_' + itemId; // Unique room identifier for the item
+    const ownerId = urlParams.get('ownerId');
+
+    // Function to fetch chat history when page loads
+    async function fetchChatHistory() {
+      try {
+        const response = await axios.get(`/api/chat/${roomId}`);
+        const chatMessages = response.data;
+        const chatContainer = document.getElementById('chat-messages');
+        chatContainer.innerHTML = ''; // Clear chat history before displaying
+
+        // Display each message
+        chatMessages.forEach((message) => {
+          const messageElement = document.createElement('div');
+          messageElement.textContent = `${message.senderId.name}: ${message.message}`;
+          chatContainer.appendChild(messageElement);
+        });
+      } catch (error) {
+        console.error('Error fetching chat history:', error);
+      }
+    }
+
+    // Fetch chat history when page loads
+    fetchChatHistory();
+
+    // Chat functionality with Socket.io
+    const socket = io();
+    
+    // Join the chat room for this item
+    socket.emit('joinRoom', roomId);
+
+    // Send chat message when the 'Send' button is clicked
+    document.getElementById('send-chat').addEventListener('click', async () => {
+      const message = document.getElementById('chat-input').value;
+      const senderId = getLoggedInUserId(); // Get logged-in user ID
+      if (message) {
+        // Save message to database via the API
+        try {
+          await axios.post('/api/chat/message', { roomId, senderId, message });
+
+          // Emit message to other users in the room
+          socket.emit('chatMessage', { message, roomId, senderId });
+
+          // Clear the chat input field
+          document.getElementById('chat-input').value = ''; 
+        } catch (error) {
+          console.error('Error sending chat message:', error);
+        }
+      }
+    });
+
+    // Listen for incoming messages and display them in real-time
+    socket.on('chatMessage', (data) => {
+      const chatMessages = document.getElementById('chat-messages');
+      const messageElement = document.createElement('div');
+      messageElement.textContent = `${data.senderName}: ${data.message}`;
+      chatMessages.appendChild(messageElement);
+    });
+  });
+</script>
+
 </body>
 </html>
