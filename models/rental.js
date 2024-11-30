@@ -6,6 +6,7 @@ const RentalSchema = new mongoose.Schema({
   ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   status: { type: String, enum: ['requested', 'approved', 'denied'], default: 'requested' },
   rentalPeriod: { type: Number, required: true }, // e.g., in days
+  message: {type: String, default: ''},
   createdAt: { type: Date, default: Date.now },
 });
 
