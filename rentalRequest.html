@@ -119,96 +119,117 @@
         }
       });
   
-      // Chat functionality with Socket.io
-      const socket = io();
-      const roomId = 'item_' + itemId; // Unique room identifier for the item
-      
-      // Join the chat room for this item
-      socket.emit('joinRoom', roomId);
-  
-      // Send chat message when the 'Send' button is clicked
-      document.getElementById('send-chat').addEventListener('click', () => {
-        const message = document.getElementById('chat-input').value;
-        const senderId = getLoggedInUserId(); // Get logged-in user ID
-        if (message) {
-          socket.emit('chatMessage', { message, roomId, senderId });
-          document.getElementById('chat-input').value = ''; 
-        }
-      });
-
-      // Listen for incoming messages and display them
-      socket.on('chatMessage', (data) => {
-        const chatMessages = document.getElementById('chat-messages');
-        const messageElement = document.createElement('div');
-        messageElement.textContent = `${data.senderName}: ${data.message}`; 
-        chatMessages.appendChild(messageElement);
-      });
     });
   </script>
   <script>
-  document.addEventListener("DOMContentLoaded", async function() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const itemId = urlParams.get('itemId'); 
-    const roomId = 'item_' + itemId; // Unique room identifier for the item
-    const ownerId = urlParams.get('ownerId');
-
-    // Function to fetch chat history when page loads
-    async function fetchChatHistory() {
-      try {
-        const response = await axios.get(`/api/chat/${roomId}`);
-        const chatMessages = response.data;
-        const chatContainer = document.getElementById('chat-messages');
-        chatContainer.innerHTML = ''; // Clear chat history before displaying
-
-        // Display each message
-        chatMessages.forEach((message) => {
-          const messageElement = document.createElement('div');
-          messageElement.textContent = `${message.senderId.name}: ${message.message}`;
-          chatContainer.appendChild(messageElement);
-        });
-      } catch (error) {
-        console.error('Error fetching chat history:', error);
+    document.addEventListener("DOMContentLoaded", async function () {
+      const urlParams = new URLSearchParams(window.location.search);
+      const itemId = urlParams.get("itemId");
+      const ownerId = urlParams.get('ownerId');
+      const roomId = "item_" + itemId; // Unique room identifier for the item
+  
+      // Utility to get the logged-in user ID
+      function getLoggedInUserId() {
+        const cookies = document.cookie.split("; ");
+        for (let cookie of cookies) {
+          const [key, value] = cookie.split("=");
+          if (key === "userId") {
+            return decodeURIComponent(value.trim());
+          }
+        }
+        return null;
       }
-    }
-
-    // Fetch chat history when page loads
-    fetchChatHistory();
-
-    // Chat functionality with Socket.io
-    const socket = io();
-    
-    // Join the chat room for this item
-    socket.emit('joinRoom', roomId);
-
-    // Send chat message when the 'Send' button is clicked
-    document.getElementById('send-chat').addEventListener('click', async () => {
-      const message = document.getElementById('chat-input').value;
-      const senderId = getLoggedInUserId(); // Get logged-in user ID
-      if (message) {
-        // Save message to database via the API
+  
+      // Fetch chat history
+      async function fetchChatHistory() {
         try {
-          await axios.post('/api/chat/message', { roomId, senderId, message });
-
-          // Emit message to other users in the room
-          socket.emit('chatMessage', { message, roomId, senderId });
-
-          // Clear the chat input field
-          document.getElementById('chat-input').value = ''; 
+          const response = await axios.get(`/api/chat/${roomId}`);
+          const chatMessages = response.data;
+          const chatContainer = document.getElementById("chat-messages");
+          chatContainer.innerHTML = ""; // Clear chat container
+  
+          // Display messages
+          chatMessages.forEach((message) => {
+            const messageElement = document.createElement("div");
+            messageElement.textContent = `${message.senderName}: ${message.message}`;
+            chatContainer.appendChild(messageElement);
+          });
         } catch (error) {
-          console.error('Error sending chat message:', error);
+          console.error("Error fetching chat history:", error);
         }
       }
+      const socket = io();
+  
+      // Join the chat room
+      socket.emit("joinRoom", roomId);
+      // Fetch chat history on page load
+      fetchChatHistory();
+      // Get logged-in user ID and handle chat message submission
+      const loggedInUserId = getLoggedInUserId();  // Get logged-in user ID
+        if (!loggedInUserId) {
+            console.warn("User is not logged in");
+        }
+      
+  
+      // Send message handler
+      document.getElementById("send-chat").addEventListener("click", async () => {
+        const chatInput = document.getElementById("chat-input");
+        const message = chatInput.value;
+
+        if (message.trim()) {
+          try {
+            // Save message to database
+            await axios.post("/api/chat/message", {
+              roomId,
+              senderId: loggedInUserId,
+              message,
+              participants: [ownerId, loggedInUserId],
+            });
+
+            // Emit message to the room
+            socket.emit("chatMessage", { roomId, senderId: loggedInUserId, message });
+
+            chatInput.value = ""; // Clear input field
+          } catch (error) {
+            console.error("Error sending message:", error);
+          }
+        }
+      });
+
+      // Listen for incoming messages
+      socket.on("chatMessage", (data) => {
+        if (data.roomId === roomId) {
+          const chatContainer = document.getElementById("chat-messages");
+          const messageElement = document.createElement("div");
+          messageElement.textContent = `${data.senderId === loggedInUserId ? "You" : data.senderName}: ${data.message}`;
+          chatContainer.appendChild(messageElement);
+          chatContainer.scrollTop = chatContainer.scrollHeight; // Auto-scroll to the bottom
+        }
+      });
+    });
+    document.addEventListener('DOMContentLoaded', () => {
+      const token = localStorage.getItem('token');  // Get the token from localStorage
+
+      fetch('http://localhost:5000/api/chat', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,  // Attach token as Authorization header
+          'Content-Type': 'application/json',
+        },
+      })
+        .then(response => response.json())
+        .then(data => {
+          const chatList = document.getElementById('chat-message');
+          data.forEach(chat => {
+            const listItem = document.createElement('li');
+            listItem.textContent = chat.message;
+            chatList.appendChild(listItem);
+          });
+        })
+        .catch(error => console.error('Error fetching chat history:', error));
     });
 
-    // Listen for incoming messages and display them in real-time
-    socket.on('chatMessage', (data) => {
-      const chatMessages = document.getElementById('chat-messages');
-      const messageElement = document.createElement('div');
-      messageElement.textContent = `${data.senderName}: ${data.message}`;
-      chatMessages.appendChild(messageElement);
-    });
-  });
-</script>
+  </script>
 
 </body>
 </html>
