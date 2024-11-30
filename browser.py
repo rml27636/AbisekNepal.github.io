@@ -227,5 +227,48 @@ def get_reviews(item_id):
     except Exception as e:
         print(f"Error fetching reviews: {e}")
         return jsonify({'error': 'Failed to fetch reviews'}), 500
+
+@app.route('/api/chat/message', methods=['POST'])
+def save_chat_message():
+    try:
+        data = request.get_json()
+        room_id = data.get('roomId')
+        sender_id = data.get('senderId')
+        message = data.get('message')
+
+        if not room_id or not sender_id or not message:
+            return jsonify({'error': 'Missing required fields'}), 400
+
+        chat_message = {
+            'roomId': room_id,
+            'senderId': ObjectId(sender_id),
+            'message': message,
+            'timestamp': datetime.datetime.utcnow()
+        }
+        db.chats.insert_one(chat_message)
+
+        return jsonify({'message': 'Message saved successfully'}), 200
+    except Exception as e:
+        print(f"Error saving chat message: {e}")
+        return jsonify({'error': 'Failed to save message'}), 500
+
+@app.route('/api/chat/<room_id>', methods=['GET'])
+def fetch_chat_history(room_id):
+    try:
+        messages = db.chat_messages.find({'roomId': room_id}).sort('timestamp', 1)
+        message_list = [
+            {
+                'message': message['message'],
+                'senderId': str(message['senderId']),
+                'senderName': db.users.find_one({'_id': message['senderId']}).get('name', 'Unknown'),
+                'timestamp': message['timestamp'].isoformat()
+            }
+            for message in messages
+        ]
+        return jsonify(message_list), 200
+    except Exception as e:
+        print(f"Error fetching chat history: {e}")
+        return jsonify({'error': 'Failed to fetch chat history'}), 500
+
 if __name__ == '__main__':
     app.run(debug=True)
