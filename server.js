@@ -6,6 +6,7 @@ const { Server } = require('socket.io');
 const dotenv = require('dotenv');
 const path = require('path'); // Import the path module to handle paths
 const cookieParser = require('cookie-parser');
+const jwt = require('jsonwebtoken');
 
 // Load environment variables from a .env file
 dotenv.config();
@@ -144,13 +145,29 @@ app.get('/api/rental', async (req, res) => {
       res.status(500).send('Error fetching rental requests');
   }
 });
+const authenticateJWT = (req, res, next) => {
+  const token = req.header('Authorization')?.replace('Bearer ', ''); // Extract token from header
+
+  if (!token) {
+    return res.status(401).json({ error: 'Unauthorized: No token provided' });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET_KEY, (err, user) => {
+    if (err) {
+      return res.status(403).json({ error: 'Unauthorized: Invalid token' });
+    }
+
+    req.user = user;  // Attach the user to the request object
+    next();  // Proceed to the next middleware or route handler
+  });
+};
 // Routes
 app.use('/api/user', userRoutes);
 app.use('/api/items', itemRoutes);
-app.use('/api/rental', rentalRoutes);
+app.use('/api/rental', rentalRoutes,authenticateJWT);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/review', reviewRoutes);
-app.use('/api/chat', chatRoutes);
+app.use('/api/chat', chatRoutes, authenticateJWT);
 
 
 // Start the server
