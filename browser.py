@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 import os
 import datetime
 from flask_cors import CORS
+from bson import ObjectId
+
 
 # Load environment variables from .env file
 load_dotenv()
@@ -19,7 +21,7 @@ if not MONGODB_URI:
 
 client = MongoClient(MONGODB_URI)
 db = client.test
-
+reviews_collection = db.reviews
 @app.route('/api/items', methods=['GET'])
 def get_items():
     try:
@@ -101,18 +103,21 @@ def request_rental():
         print(f"Error in request_rental: {e}")  # Log the error
         return jsonify({'error': str(e)}), 500
     
-@app.route('/api/users/<user_id>', methods=['GET'])
+@app.route('/api/user/<user_id>', methods=['GET'])
 def get_user(user_id):
+    print(f"Fetching user with ID: {user_id}")
     """
     Fetch user details by user ID.
     """
     try:
         from bson import ObjectId
         if not ObjectId.is_valid(user_id):
+            print(f"Invalid ObjectId format: {user_id}")
             return jsonify({'error': 'Invalid user ID format'}), 400
 
         user = db.users.find_one({'_id': ObjectId(user_id)}, {'name': 1})
         if not user:
+            print(f"No user found for ID: {user_id}")
             return jsonify({'error': 'User not found'}), 404
 
         return jsonify({'name': user['name']})
@@ -125,12 +130,10 @@ def get_user(user_id):
 def get_rental_requests():
     try:
         user_id = request.cookies.get('userId')
-        if not user_id:
-            return jsonify({'error': 'User not logged in'}), 401
-
-        from bson import ObjectId
+        if not user_id or not ObjectId.is_valid(user_id):
+            return jsonify({'error': 'User not logged in or invalid userId'}), 401
         rental_requests = db.rentals.aggregate([
-            { '$match': { 'ownerId': ObjectId(user_id) } },
+            {'$match': {'ownerId': ObjectId(user_id)}},
             {
                 '$lookup': {
                     'from': 'items',
@@ -139,10 +142,11 @@ def get_rental_requests():
                     'as': 'item'
                 }
             },
-            { '$unwind': '$item' },
+            {'$unwind': '$item'},
             {
                 '$project': {
-                    'id': { '$toString': '$_id' },
+                    'id': {'$toString': '$_id'},
+                    'itemId': {'$toString': '$item._id'},
                     'itemName': '$item.name',
                     'itemPrice': '$item.price',
                     'rentalPeriod': 1,
@@ -152,30 +156,76 @@ def get_rental_requests():
                 }
             }
         ])
-
         return jsonify({'requests': list(rental_requests)}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-@app.route('/api/rentals/requests/<request_id>', methods=['PUT'])
+
+@app.route('/api/rental-requests/<request_id>', methods=['PUT'])
 def update_rental_request(request_id):
     try:
-        from bson import ObjectId
         if not ObjectId.is_valid(request_id):
             return jsonify({'error': 'Invalid request ID'}), 400
-
-        data = request.json
+        data = request.get_json()
         status = data.get('status')
         if status not in ['approved', 'declined']:
-            return jsonify({'error': 'Invalid status'}), 400
-
-        db.rentals.update_one(
-            { '_id': ObjectId(request_id) },
-            { '$set': { 'status': status } }
+            return jsonify({'error': 'Invalid status value'}), 400
+        result = db.rentals.update_one(
+            {'_id': ObjectId(request_id)},
+            {'$set': {'status': status}}
         )
-
-        return jsonify({'message': f'Request {status} successfully'}), 200
+        if result.modified_count == 0:
+            return jsonify({'error': 'Request not found or status already set'}), 404
+        return jsonify({'message': f'Request {status} successfully.'}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+@app.route('/api/review/submit', methods=['POST'])
+def submit_review():
+    try:
+        # Parse JSON data from request
+        data = request.get_json()
+        print(f"Received data: {data}")
 
+        # Extract the fields from the received data
+        item_id = data.get('item_id')
+        rating = data.get('rating')
+        comment = data.get('comment')
+
+        # Validate the data
+        if not item_id or not rating or not comment:
+            return jsonify({'error': 'Missing required fields'}), 400
+
+        # Insert the review into the database
+        review = {
+            'itemId': ObjectId(item_id),  # Ensure ObjectId format for MongoDB
+            'rating': rating,
+            'comment': comment,
+            'created_at': datetime.datetime.utcnow()  # Timestamp for the review
+        }
+        reviews_collection.insert_one(review)
+
+        # Return success response
+        return jsonify({'message': 'Review submitted successfully!'}), 200
+
+    except Exception as e:
+        print(f"Error: {e}")
+        return jsonify({'error': 'Failed to submit review'}), 500
+@app.route('/api/review/<item_id>', methods=['GET'])
+def get_reviews(item_id):
+    try:
+        # Validate the ObjectId
+        if not ObjectId.is_valid(item_id):
+            return jsonify({'error': 'Invalid item ID'}), 400
+
+        # Fetch reviews for the item
+        reviews = reviews_collection.find({'itemId': ObjectId(item_id)})
+        review_list = [{
+            'rating': review['rating'],
+            'comment': review['comment']
+        } for review in reviews]
+
+        return jsonify(review_list), 200
+    except Exception as e:
+        print(f"Error fetching reviews: {e}")
+        return jsonify({'error': 'Failed to fetch reviews'}), 500
 if __name__ == '__main__':
     app.run(debug=True)
